@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const NCM_BASE = 'http://localhost:3000';
+const NCM_BASE = process.env.NCM_BASE || 'http://localhost:3000';
 const COOKIE_PATH = path.join(__dirname, '..', 'user', 'ncm-cookie.txt');
 
 // 读取登录后的网易云 cookie（含 MUSIC_U），用于获取付费/VIP 歌曲的播放地址
@@ -66,4 +66,14 @@ async function recommend() {
   }));
 }
 
-export { search, songUrl, lyric, recommend, hasLogin };
+// 轻量健康检查（/login/status 无需登录即可返回 JSON）
+async function ping() {
+  try {
+    const res = await fetch(`${NCM_BASE}/login/status`, { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export { search, songUrl, lyric, recommend, hasLogin, ping };

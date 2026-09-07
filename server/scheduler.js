@@ -40,7 +40,7 @@ function init(onBroadcast) {
       );
       if (result?.plan) {
         setPlan(today, JSON.stringify(result));
-        broadcast({ type: 'plan_ready', data: result });
+        broadcast('plan_ready', result);
       }
     } catch (err) {
       console.error('[scheduler] Plan generation failed:', err.message);
@@ -50,14 +50,14 @@ function init(onBroadcast) {
   // 09:00 — Morning music check-in
   cron.schedule('0 9 * * *', () => {
     console.log('[scheduler] 09:00 — Morning check-in');
-    broadcast({ type: 'morning_checkin', data: { time: '09:00', message: '早安，Wind Sleep 为你准备了今天的早间音乐。' } });
+    broadcast('morning_checkin', { time: '09:00', message: '早安，Wind Sleep 为你准备了今天的早间音乐。' });
   });
 
   // 00 of every hour during waking hours — mood check (10-22)
   cron.schedule('0 10-22 * * *', () => {
     const hour = new Date().getHours();
     console.log(`[scheduler] ${hour}:00 — Mood check`);
-    broadcast({ type: 'mood_check', data: { hour } });
+    broadcast('mood_check', { hour });
   });
 
   console.log('[scheduler] Initialized: 07:00 plan / 09:00 morning / hourly mood checks');

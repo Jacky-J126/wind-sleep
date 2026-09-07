@@ -1,5 +1,5 @@
-const CACHE_NAME = 'wind-sleep-v1';
-const PRELOAD_URLS = ['/', '/src/App.jsx'];
+const CACHE_NAME = 'wind-sleep-v2';
+const PRELOAD_URLS = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

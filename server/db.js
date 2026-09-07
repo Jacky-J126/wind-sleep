@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, '..', 'state.json');
+const DB_PATH = process.env.WS_STATE_PATH || path.join(__dirname, '..', 'state.json');
 
 let state = { messages: [], plays: [], plans: {}, prefix: {} };
 

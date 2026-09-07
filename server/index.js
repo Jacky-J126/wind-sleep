@@ -3,15 +3,20 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { init as initDb, getRecentPlays, getPlan, logMessage, getRecentMessages } from './db.js';
-import { route, saveTasteFile } from './router.js';
+import { Readable } from 'stream';
+import { init as initDb, getRecentPlays, getPlan, getRecentMessages } from './db.js';
+import { route, saveTasteFile, handleNext } from './router.js';
 import { init as initScheduler } from './scheduler.js';
 import { start as startWeather } from './weather.js';
 import { CACHE_DIR } from './tts.js';
+import { songUrl, ping as pingNcm } from './ncm.js';
+import { claudeAvailable } from './claude.js';
 import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8888;
+// 默认只监听本机；如需手机等局域网设备访问，设 HOST=0.0.0.0（服务无鉴权，详见 README 安全说明）
+const HOST = process.env.HOST || '127.0.0.1';
 
 // Init DB
 initDb();
@@ -19,6 +24,20 @@ initDb();
 // Express app
 const app = express();
 app.use(express.json());
+
+// 服务状态（/api/status 用，NCM 每 30s 探测一次）
+const status = {
+  hasFishKey: Boolean(process.env.FISH_AUDIO_KEY),
+  claudeAvailable: claudeAvailable(),
+  ncmUp: false,
+  ncmCheckedAt: null,
+};
+async function refreshNcmStatus() {
+  status.ncmUp = await pingNcm();
+  status.ncmCheckedAt = new Date().toISOString();
+}
+refreshNcmStatus();
+setInterval(refreshNcmStatus, 30 * 1000);
 
 // Serve TTS cache
 app.use('/tts', express.static(CACHE_DIR));
@@ -37,16 +56,46 @@ app.post('/api/chat', async (req, res) => {
   res.json(result);
 });
 
+// GET /api/status — 依赖服务配置状态（前端设置页显示）
+app.get('/api/status', (_req, res) => {
+  res.json(status);
+});
+
 // GET /api/now
 app.get('/api/now', (_req, res) => {
   const recent = getRecentPlays(1);
   res.json({ current: recent[0] || null });
 });
 
-// GET /api/next
-app.get('/api/next', (_req, res) => {
+// GET /api/next — 自动切歌候选（场景歌单/兜底关键词里挑一首可播的）
+app.get('/api/next', async (_req, res) => {
   const plan = getPlan(new Date().toISOString().slice(0, 10));
-  res.json({ plan: plan ? plan.plan : null, next: null });
+  const next = await handleNext();
+  res.json({ plan: plan ? plan.plan : null, next });
+});
+
+// GET /api/ncm/stream/:id — 同源 Range 音频代理（支持 seek，避免 CDN referer/过期问题）
+app.get('/api/ncm/stream/:id', async (req, res) => {
+  const url = await songUrl(req.params.id);
+  if (!url) return res.status(404).json({ error: 'no playable url' });
+  try {
+    const headers = {};
+    if (req.headers.range) headers.Range = req.headers.range;
+    const upstream = await fetch(url, { headers });
+    res.status(upstream.status);
+    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+    if (upstream.body) {
+      Readable.fromWeb(upstream.body).pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    console.error('[stream] proxy error:', err.message);
+    res.status(502).json({ error: 'stream proxy failed' });
+  }
 });
 
 // GET /api/taste
@@ -99,14 +148,21 @@ const wss = new WebSocketServer({ server, path: '/stream' });
 
 wss.on('connection', (ws) => {
   console.log('[ws] Client connected');
+  // 版本化握手：客户端可据此判断协议兼容性
+  ws.send(JSON.stringify({
+    event: 'connected',
+    data: { protocol: 'wind-sleep/1', time: new Date().toISOString() },
+    ts: Date.now(),
+  }));
 
   ws.on('close', () => {
     console.log('[ws] Client disconnected');
   });
 });
 
-function broadcast(data) {
-  const payload = JSON.stringify(data);
+// 统一事件信封 { event, data, ts }
+function broadcast(event, data) {
+  const payload = JSON.stringify({ event, data, ts: Date.now() });
   wss.clients.forEach((client) => {
     if (client.readyState === 1) client.send(payload);
   });
@@ -118,10 +174,10 @@ initScheduler(broadcast);
 // Start weather updater (background refresh, cached)
 startWeather();
 
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
   console.log(`\n  🌬️  Wind Sleep is awake`);
   console.log(`  ─────────────────────────`);
-  console.log(`  Server:  http://localhost:${PORT}`);
-  console.log(`  Stream:  ws://localhost:${PORT}/stream`);
+  console.log(`  Server:  http://${HOST}:${PORT}`);
+  console.log(`  Stream:  ws://${HOST}:${PORT}/stream`);
   console.log(`  ─────────────────────────\n`);
 });

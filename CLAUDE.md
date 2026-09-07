@@ -32,14 +32,16 @@ npm run client:dev
 
 | Method | Path | 说明 |
 |--------|------|------|
-| POST | /api/chat | 对话: `{"message":"..."}` → `{say, play, reason, segue, tts}` |
+| POST | /api/chat | 对话: `{"message":"..."}` → `{say, play, reason, segue, tts, action}` |
 | GET | /api/now | 当前播放 |
-| GET | /api/next | 下一首预览 |
+| GET | /api/next | 自动切歌候选（场景歌单/兜底关键词挑可播曲目） |
+| GET | /api/status | 依赖服务状态: `{hasFishKey, claudeAvailable, ncmUp}` |
 | GET | /api/taste | 读取品味文件 |
 | POST | /api/taste | 保存品味文件: `{"file":"taste.md","content":"..."}` |
 | GET | /api/plan/today | 今日播放规划 |
 | GET | /api/history | 对话历史 |
-| WS | /stream | 实时推送 |
+| GET | /api/ncm/stream/:id | 同源 Range 音频代理（转发 206，支持 seek） |
+| WS | /stream | 实时推送（信封 `{event, data, ts}`：connected/track_change/plan_ready/morning_checkin/mood_check） |
 
 ## 目录
 

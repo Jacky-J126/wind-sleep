@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 const JSON_SCHEMA = {
   type: 'object',
@@ -120,4 +120,14 @@ function offlineResponse(message) {
   return null; // No offline match
 }
 
-export { ask, askStructured, offlineResponse };
+// 检查 claude CLI 是否可用（启动时调用一次，结果缓存到 /api/status）
+function claudeAvailable() {
+  try {
+    const r = spawnSync('claude', ['--version'], { timeout: 5000 });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+export { ask, askStructured, offlineResponse, claudeAvailable };

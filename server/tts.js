@@ -11,8 +11,8 @@ if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
 
-// TODO: Replace with real Fish Audio API key
 const FISH_AUDIO_API_KEY = process.env.FISH_AUDIO_KEY || '';
+const FISH_AUDIO_VOICE = process.env.FISH_AUDIO_VOICE || 'default';
 const FISH_AUDIO_BASE = 'https://api.fish.audio/v1';
 
 function hashText(text, voice) {
@@ -23,7 +23,7 @@ function cachedPath(hash) {
   return path.join(CACHE_DIR, `${hash}.mp3`);
 }
 
-async function synthesize(text, { voice = 'default', force = false } = {}) {
+async function synthesize(text, { voice = FISH_AUDIO_VOICE, force = false } = {}) {
   const hash = hashText(text, voice);
   const filePath = cachedPath(hash);
 

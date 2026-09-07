@@ -58,13 +58,14 @@ function buildSystemPrompt() {
     ? `${weather.desc}，${weather.tempC}°C，湿度 ${weather.humidity}%，${weather.location}`
     : '未知';
 
+  // 六片式 Prompt 组装（对齐 spec）：
+  // 系统提示 / 品味语料 / 环境注入 / 执行轨迹 在此静态组装，
+  // 历史记忆（digest + 最近对话）与用户输入在 router.js 动态追加。
   const fragments = [
-    `=== SYSTEM ===\n${promptMd || 'You are Wind Sleep, a personal AI music DJ.'}`,
-    `=== USER CORPUS ===\n${userCorpus || 'No user taste data provided yet.'}`,
-    `=== ENVIRONMENT ===\nDate: ${today}\nTime: ${hour}:00 (${timeLabel(hour)})\nWeather: ${weatherLine}`,
-    `=== SCENARIO PLAYLISTS ===\n${playlistLines}`,
-    `=== RECENT PLAYS ===\n${playsList}`,
-    `=== TODAY'S PLAN ===\n${plan?.content || 'No plan set for today.'}`,
+    `=== 系统提示 (SYSTEM) ===\n${promptMd || 'You are Wind Sleep, a personal AI music DJ.'}`,
+    `=== 品味语料 (USER CORPUS) ===\n${userCorpus || 'No user taste data provided yet.'}\n\n场景歌单:\n${playlistLines}`,
+    `=== 环境注入 (ENVIRONMENT) ===\nDate: ${today}\nTime: ${hour}:00 (${timeLabel(hour)})\nWeather: ${weatherLine}\n今日计划: ${plan?.content || 'No plan set for today.'}`,
+    `=== 执行轨迹 (EXECUTION TRACE) ===\n${playsList}`,
   ];
 
   return fragments.join('\n\n');

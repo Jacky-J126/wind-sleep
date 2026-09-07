@@ -1,6 +1,6 @@
 import { ask, offlineResponse } from './claude.js';
 import { buildChatContext } from './context.js';
-import { logMessage, logPlay, getRecentPlays } from './db.js';
+import { logMessage, logPlay } from './db.js';
 import { search as ncmSearch, songUrl, recommend as ncmRecommend } from './ncm.js';
 import { synthesize } from './tts.js';
 import fs from 'fs';
@@ -33,19 +33,28 @@ function extractSongName(text) {
   return m ? m[1].trim() : null;
 }
 
+// 同源 Range 代理地址：避免直连 CDN 的 referer/过期问题，前端可正常 seek
+function streamUrl(id) {
+  return `/api/ncm/stream/${id}`;
+}
+
+// 从候选歌曲中随机挑出第一首有可播 URL 的（跳过版权/VIP 受限）
+async function pickPlayable(songs, maxTries = 5) {
+  const pool = [...songs].sort(() => Math.random() - 0.5).slice(0, maxTries);
+  for (const s of pool) {
+    const u = await songUrl(s.id);
+    if (u) return { ...s, url: streamUrl(s.id) };
+  }
+  return null;
+}
+
 async function handlePlay(keyword) {
   const songs = await ncmSearch(keyword, 5);
   if (!songs || songs.length === 0) {
     return { say: `没有找到「${keyword}」相关的歌曲`, play: null };
   }
-  // 逐首尝试获取可播放 URL，跳过版权/VIP 受限歌曲
-  let url = null;
-  let picked = null;
-  for (const s of songs) {
-    const u = await songUrl(s.id);
-    if (u) { url = u; picked = s; break; }
-  }
-  if (!picked || !url) {
+  const picked = await pickPlayable(songs);
+  if (!picked) {
     return { say: `找到「${keyword}」相关歌曲，但都受版权保护暂时无法播放，换个关键词试试？`, play: null };
   }
   logPlay({
@@ -56,12 +65,48 @@ async function handlePlay(keyword) {
   });
   return {
     say: `正在播放 ${picked.name} — ${picked.artist}`,
-    play: { ...picked, url },
+    play: picked,
     reason: `用户点播: ${keyword}`,
   };
 }
 
 const FALLBACK_KEYWORDS = ['后摇', '氛围电子', '爵士嘻哈', 'Ólafur Arnalds', 'Max Richter'];
+
+// 根据当前时段从 user/playlists.json 挑场景关键词，用于自动切歌
+function sceneKeywordsForNow() {
+  const now = new Date();
+  const hour = now.getHours();
+  const weekend = now.getDay() === 0 || now.getDay() === 6;
+  let scene = 'night';
+  if (hour >= 6 && hour < 10) scene = 'morning';
+  else if (hour >= 10 && hour < 14) scene = 'focus';
+  else if (hour >= 14 && hour < 18) scene = 'afternoon';
+  else if (hour >= 18 && hour < 22) scene = 'evening';
+  try {
+    const playlists = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', 'user', 'playlists.json'), 'utf-8')
+    );
+    const sceneKw = playlists[scene] || [];
+    const weekendKw = weekend ? playlists.weekend || [] : [];
+    return [...sceneKw, ...weekendKw].filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// 自动切歌：优先当前场景关键词，最多尝试 3 个关键词
+async function handleNext() {
+  const keywords = [...sceneKeywordsForNow(), ...FALLBACK_KEYWORDS].slice(0, 3);
+  for (const kw of keywords) {
+    const songs = await ncmSearch(kw, 5);
+    const picked = await pickPlayable(songs);
+    if (picked) {
+      logPlay({ song_id: picked.id, song_name: picked.name, artist: picked.artist, reason: '自动切歌' });
+      return { ...picked, reason: '自动切歌' };
+    }
+  }
+  return null;
+}
 
 async function handleRecommend() {
   let songs = await ncmRecommend();
@@ -74,12 +119,14 @@ async function handleRecommend() {
   if (!songs || songs.length === 0) {
     return { say: '抱歉，暂时获取不到推荐歌曲。试试 /play 歌名 直接点歌？', play: null };
   }
-  const pick = songs[Math.floor(Math.random() * songs.length)];
-  const url = await songUrl(pick.id);
-  logPlay({ song_id: pick.id, song_name: pick.name, artist: pick.artist, reason: '系统推荐' });
+  const picked = await pickPlayable(songs);
+  if (!picked) {
+    return { say: '推荐列表里的歌暂时都受版权保护，稍后再试试？', play: null };
+  }
+  logPlay({ song_id: picked.id, song_name: picked.name, artist: picked.artist, reason: '系统推荐' });
   return {
-    say: `为你推荐一首新歌：${pick.name} — ${pick.artist}`,
-    play: { ...pick, url },
+    say: `为你推荐一首新歌：${picked.name} — ${picked.artist}`,
+    play: picked,
     reason: '每日新鲜推荐',
   };
 }
@@ -109,17 +156,18 @@ async function route(userMessage, { cwd, broadcast } = {}) {
   }
 
   // Natural language → Claude
+  // 六片式：系统提示/品味语料/环境注入/执行轨迹（context.js）+ 历史记忆/用户输入（此处）
   const { systemPrompt, history, digest } = await buildChatContext(arg);
 
   const claudePrompt = `${systemPrompt}
 
-=== MEMORY DIGEST ===
+=== 历史记忆 (MEMORY) ===
 ${digest || '(none)'}
 
-=== CONVERSATION HISTORY ===
+最近对话:
 ${history.map((m) => `[${m.role}]: ${m.content}`).join('\n')}
 
-=== USER INPUT ===
+=== 用户输入 (USER INPUT) ===
 ${arg}
 
 Respond with JSON per the schema.`;
@@ -134,7 +182,7 @@ Respond with JSON per the schema.`;
       const songs = await ncmSearch(offline.play.name + ' ' + (offline.play.artist || ''), 1);
       if (songs.length > 0) {
         const url = await songUrl(songs[0].id);
-        offline.play = { ...songs[0], url };
+        if (url) offline.play = { ...songs[0], url: streamUrl(songs[0].id) };
       }
       logPlay({
         song_id: offline.play.id,
@@ -164,7 +212,7 @@ Respond with JSON per the schema.`;
       if (!songs.length) songs = await ncmSearch(result.play.name, 1);
       if (songs.length > 0) {
         const url = await songUrl(songs[0].id);
-        result.play = { ...songs[0], url };
+        result.play = { ...songs[0], url: url ? streamUrl(songs[0].id) : null };
       } else {
         result.play.url = null;
       }
@@ -191,7 +239,7 @@ Respond with JSON per the schema.`;
 
     // Broadcast to WebSocket clients
     if (broadcast) {
-      broadcast({ type: 'track_change', data: result });
+      broadcast('track_change', result);
     }
 
     return result;
@@ -229,4 +277,4 @@ function saveTasteFile(filename, content) {
   }
 }
 
-export { route, matchIntent, saveTasteFile, handlePlay, handleRecommend };
+export { route, matchIntent, saveTasteFile, handlePlay, handleRecommend, handleNext, pickPlayable, sceneKeywordsForNow };
