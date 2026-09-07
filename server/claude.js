@@ -130,4 +130,4 @@ function claudeAvailable() {
   }
 }
 
-export { ask, askStructured, offlineResponse, claudeAvailable };
+export { ask, askStructured, offlineResponse, claudeAvailable, parseOutput };

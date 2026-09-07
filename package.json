@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server/index.js",
+    "test": "node --test",
     "ncm:login": "node server/ncm-login.js",
     "client:dev": "cd client && npx vite --port 5173",
     "client:build": "cd client && npx vite build",
