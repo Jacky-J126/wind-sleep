@@ -1,0 +1,24 @@
+# 网易云登录凭证（含 MUSIC_U，切勿提交）
+user/ncm-cookie.txt
+assets/ncm-login-qr.png
+
+# 运行时状态
+state.json
+
+# TTS 缓存（运行时生成）
+server/tts/
+
+# 环境变量（含密钥）
+.env
+
+# Claude Code 本地配置
+.claude/
+
+# 依赖与构建产物
+node_modules/
+client/dist/
+client/node_modules/
+
+# 日志与临时文件
+*.log
+.DS_Store
