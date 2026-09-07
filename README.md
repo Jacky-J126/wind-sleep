@@ -202,6 +202,16 @@ npm run client:build  # 前端构建
 
 CI（GitHub Actions）在 Node 18/20/22 矩阵上运行 `npm ci` → `npm test` → 构建。
 
+## 真实模式验证 / Real-Mode Verification
+
+mock 模式（默认）下 TTS 为静音占位，音源依赖本机 NCM。想验证完整真实链路：
+
+1. 启动 [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 于 `localhost:3000`，并运行 `npm run ncm:login` 完成扫码登录（写入 `user/ncm-cookie.txt`，用于解锁 VIP 歌曲播放地址）
+2. 确认 `claude` CLI 已登录（`claude --version` 可用；`GET /api/status` 返回 `claudeAvailable: true`）
+3. `.env` 填入 `FISH_AUDIO_KEY` 与 `FISH_AUDIO_VOICE`
+4. `npm start` 后打开 `http://localhost:8888`，发一句"我有点悲伤"——应听到 DJ 语音旁白（fish.audio 合成），随后自动播放真实音乐，播完自动切下一首
+5. 检查 Settings 页：模型/TTS/NCM 三项均显示就绪
+
 ## 免责声明 / Disclaimer
 
 本项目仅供个人学习与自用研究。音源通过 **非官方** 的 NeteaseCloudMusicApi 获取，仅供技术演示，请勿用于商业用途；如涉及版权问题请联系仓库作者处理。Fish Audio、网易云音乐、Claude 均为各权利方商标，本项目与其无隶属关系。
